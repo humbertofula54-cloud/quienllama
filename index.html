@@ -243,15 +243,10 @@ function analizar(num) {
       tip:'Si no reconoces la empresa, no confirmes datos personales por teléfono.' };
   }
 
-  // Por último dígito para simular variedad
-  const last = parseInt(num.slice(-1));
-  if (last <= 2) return { verdict:'SOSPECHOSO', risk:45, reports:3+userReports.length, userReports,
-    analysis:'Número sin reportes previos pero con características similares a líneas usadas para spam. Procede con precaución.',
-    tip:'Puedes reportarlo aquí si recibes una llamada sospechosa para alertar a otros usuarios.' };
-
-  return { verdict:'DESCONOCIDO', risk:15, reports:userReports.length, userReports,
-    analysis:'Este número no tiene reportes en nuestra base de datos. Puede ser un número legítimo o simplemente nuevo en el sistema. Sé el primero en reportarlo si recibes una llamada extraña.',
-    tip:'Si recibes una llamada y es spam, repórtala aquí para ayudar a la comunidad colombiana.' };
+  // Sin reportes = desconocido, no sospechoso
+  return { verdict:'DESCONOCIDO', risk:0, reports:0, userReports,
+    analysis:'Este número no tiene reportes en nuestra base de datos. No podemos confirmar si es spam o legítimo. Si recibes una llamada extraña de este número, repórtalo para alertar a otros usuarios.',
+    tip:'Sé el primero en reportar este número y ayuda a la comunidad colombiana 🇨🇴' };
 }
 
 // ── BUSCAR ────────────────────────────────────────────────────────
