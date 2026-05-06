@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>QuienLlama 🇨🇴</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.6.0/axios.min.js"></script>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   body { font-family:'Segoe UI',sans-serif; background:#0f0f1a; color:#fff; min-height:100vh; }
@@ -50,6 +51,7 @@
   .risk-high { background:linear-gradient(90deg,#ff4444,#ff0000); }
   .risk-mid { background:linear-gradient(90deg,#ff9800,#ff6600); }
   .risk-low { background:linear-gradient(90deg,#4caf50,#2e7d32); }
+  .risk-zero { background:#607d8b; }
   .ai-analysis { background:#ffffff08; border-radius:10px; padding:14px; font-size:0.88rem; line-height:1.6; color:#ccc; border-left:3px solid #ffd700; margin:16px 0; }
   .ai-label { font-size:0.7rem; color:#ffd700; font-weight:700; margin-bottom:6px; }
   .info-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:16px 0; }
@@ -80,15 +82,13 @@
   .toast { position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:#4caf50; color:#fff; padding:12px 24px; border-radius:10px; font-weight:600; font-size:0.9rem; z-index:999; animation:slideUp 0.3s ease; }
   @keyframes slideUp { from{transform:translateX(-50%) translateY(20px);opacity:0} to{transform:translateX(-50%) translateY(0);opacity:1} }
   .section-divider { height:1px; background:#ffffff10; margin:24px 0; }
-  .tags-row { display:flex; flex-wrap:wrap; gap:6px; margin:10px 0; }
-  .tag { background:#ffffff12; border-radius:6px; padding:4px 10px; font-size:0.75rem; color:#ccc; }
-  .community-reports { margin:12px 0; }
   .cr-title { font-size:0.75rem; color:#888; margin-bottom:8px; }
   .cr-bar-row { display:flex; align-items:center; gap:8px; margin-bottom:5px; }
-  .cr-label { font-size:0.75rem; color:#ccc; width:120px; }
+  .cr-label { font-size:0.75rem; color:#ccc; width:130px; }
   .cr-bar { flex:1; height:6px; background:#ffffff10; border-radius:3px; overflow:hidden; }
   .cr-fill { height:100%; border-radius:3px; background:#ffd700; }
   .cr-count { font-size:0.72rem; color:#888; width:30px; text-align:right; }
+  .db-indicator { font-size:0.7rem; color:#4caf50; text-align:center; padding:6px; }
 </style>
 </head>
 <body>
@@ -96,7 +96,7 @@
 <div class="header">
   <div>
     <div class="logo">Quien<span>Llama</span> 🇨🇴</div>
-    <div class="tagline">Identifica llamadas spam en Colombia · Gratis</div>
+    <div class="tagline">Identifica llamadas spam en Colombia</div>
   </div>
 </div>
 
@@ -112,12 +112,13 @@
       <button class="btn-search" id="btnSearch" onclick="buscar()">🔍 Buscar</button>
     </div>
   </div>
+  <div class="db-indicator" id="dbStatus">⚡ Conectando con base de datos...</div>
 </div>
 
 <div class="stats">
-  <div class="stat"><div class="stat-num" id="sR">12,847</div><div class="stat-label">Reportes totales</div></div>
-  <div class="stat"><div class="stat-num" id="sN">4,321</div><div class="stat-label">Números identificados</div></div>
-  <div class="stat"><div class="stat-num" id="sC">89</div><div class="stat-label">Consultas hoy</div></div>
+  <div class="stat"><div class="stat-num" id="sR">...</div><div class="stat-label">Reportes totales</div></div>
+  <div class="stat"><div class="stat-num" id="sN">...</div><div class="stat-label">Números identificados</div></div>
+  <div class="stat"><div class="stat-num" id="sC">0</div><div class="stat-label">Consultas hoy</div></div>
 </div>
 
 <div class="main">
@@ -127,6 +128,46 @@
 </div>
 
 <script>
+// ── SUPABASE CONFIG ───────────────────────────────────────────────
+const SB_URL = 'https://xpeniyujjuxhllfomhwe.supabase.co';
+const SB_KEY = 'sb_publishable_nBnGjKSfqYV93NQT83-vrw_yYVpQCAa';
+const HEADERS = { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=representation' };
+
+// ── SUPABASE API ──────────────────────────────────────────────────
+async function getReportes(numero) {
+  try {
+    const r = await axios.get(`${SB_URL}/rest/v1/reportes?numero=eq.${numero}&order=creado_en.desc`, { headers: HEADERS });
+    return r.data || [];
+  } catch(e) { return []; }
+}
+
+async function insertReporte(numero, categoria, comentario) {
+  try {
+    await axios.post(`${SB_URL}/rest/v1/reportes`, { numero, categoria, comentario }, { headers: HEADERS });
+    return true;
+  } catch(e) { return false; }
+}
+
+async function getTotales() {
+  try {
+    const [r1, r2] = await Promise.all([
+      axios.get(`${SB_URL}/rest/v1/reportes?select=id`, { headers: { ...HEADERS, 'Prefer': 'count=exact', 'Range': '0-0' } }),
+      axios.get(`${SB_URL}/rest/v1/reportes?select=numero`, { headers: HEADERS })
+    ]);
+    const total = parseInt(r1.headers['content-range']?.split('/')[1] || 0);
+    const unicos = new Set((r2.data||[]).map(x => x.numero)).size;
+    document.getElementById('sR').textContent = total.toLocaleString('es-CO');
+    document.getElementById('sN').textContent = unicos.toLocaleString('es-CO');
+    document.getElementById('dbStatus').textContent = '🟢 Base de datos conectada';
+    document.getElementById('dbStatus').style.color = '#4caf50';
+  } catch(e) {
+    document.getElementById('dbStatus').textContent = '🔴 Sin conexión a base de datos';
+    document.getElementById('dbStatus').style.color = '#ff4444';
+    document.getElementById('sR').textContent = '0';
+    document.getElementById('sN').textContent = '0';
+  }
+}
+
 // ── DATOS ─────────────────────────────────────────────────────────
 const OPERATORS = {
   '300':'Claro','301':'Claro','302':'Claro','303':'Claro','304':'Claro','305':'Claro',
@@ -135,167 +176,111 @@ const OPERATORS = {
   '320':'Tigo','321':'Tigo','322':'Tigo','323':'Tigo','324':'Claro',
   '350':'Virgin Mobile','351':'Virgin Mobile',
   '600':'Fijo Bogotá','601':'Fijo Bogotá','604':'Fijo Medellín',
-  '605':'Fijo Barranquilla','607':'Fijo Bucaramanga','608':'Fijo Manizales',
-  '241':'Fijo Bucaramanga','246':'Fijo Bucaramanga'
+  '605':'Fijo Barranquilla','607':'Fijo Bucaramanga','608':'Fijo Manizales'
 };
-
 const CITIES = {
   '600':'Bogotá','601':'Bogotá','604':'Medellín','605':'Barranquilla',
-  '607':'Bucaramanga','608':'Manizales','241':'Bucaramanga','246':'Bucaramanga'
+  '607':'Bucaramanga','608':'Manizales'
 };
-
-// Patrones de spam conocidos en Colombia
-const SPAM_PREFIXES = ['018000','01800','018'];
 const KNOWN_SPAM = {
-  '6017498': { verdict:'TELEMARKETING', label:'Claro Colombia', risk:85, analysis:'Número identificado como call center de Claro Colombia. Ofrecen planes de telefonía e internet. Utilizan marcación automática y suelen llamar reiteradamente.', tip:'Si no eres cliente de Claro, puedes pedir que te retiren de su lista llamando al *611.' },
-  '6017355': { verdict:'TELEMARKETING', label:'Movistar', risk:80, analysis:'Call center de Movistar Colombia. Ofrecen portabilidad y planes de datos.', tip:'Puedes solicitar exclusión de llamadas comerciales en la página de Movistar.' },
-  '6014259': { verdict:'TELEMARKETING', label:'Bancolombia', risk:75, analysis:'Línea de telemarketing de Bancolombia. Ofrecen tarjetas de crédito y créditos de libre inversión.', tip:'Si ya eres cliente, verifica en la app oficial cualquier oferta antes de dar datos.' },
-  '6017776': { verdict:'SPAM', label:'Desconocido', risk:90, analysis:'Número con alto volumen de reportes de spam. Usuarios reportan llamadas silenciosas o cuelgan al contestar.', tip:'No devuelvas la llamada. Bloquea el número directamente en tu teléfono.' },
+  '6017498':{ verdict:'TELEMARKETING', label:'Claro Colombia', risk:85, analysis:'Número identificado como call center de Claro Colombia. Ofrecen planes de telefonía e internet.', tip:'Si no eres cliente de Claro, pide que te retiren de su lista llamando al *611.' },
+  '6017355':{ verdict:'TELEMARKETING', label:'Movistar', risk:80, analysis:'Call center de Movistar Colombia. Ofrecen portabilidad y planes de datos.', tip:'Puedes solicitar exclusión en la página de Movistar.' },
+  '6014259':{ verdict:'TELEMARKETING', label:'Bancolombia', risk:75, analysis:'Línea de telemarketing de Bancolombia. Ofrecen tarjetas de crédito y créditos.', tip:'Verifica en la app oficial cualquier oferta antes de dar datos.' },
 };
-
 const CATS = [
-  {id:'spam', label:'🚫 Spam'},
-  {id:'telemarketing', label:'📢 Telemarketing'},
-  {id:'banco', label:'🏦 Banco / Crédito'},
-  {id:'robocall', label:'🤖 Robocall'},
-  {id:'llama_cuelga', label:'🔇 Llama y cuelga'},
-  {id:'wangiri', label:'⚠️ Wangiri'},
-  {id:'fraude', label:'💀 Fraude / Estafa'},
-  {id:'legitimo', label:'✅ Legítimo'}
+  {id:'spam',label:'🚫 Spam'},{id:'telemarketing',label:'📢 Telemarketing'},
+  {id:'banco',label:'🏦 Banco / Crédito'},{id:'robocall',label:'🤖 Robocall'},
+  {id:'llama_cuelga',label:'🔇 Llama y cuelga'},{id:'wangiri',label:'⚠️ Wangiri'},
+  {id:'fraude',label:'💀 Fraude / Estafa'},{id:'legitimo',label:'✅ Legítimo'}
 ];
-
 const VERDICTS = {
-  SPAM:         {label:'🚫 SPAM',         cls:'badge-spam'},
+  SPAM:{label:'🚫 SPAM',cls:'badge-spam'},
   TELEMARKETING:{label:'📢 TELEMARKETING',cls:'badge-telemarketing'},
-  ROBOCALL:     {label:'🤖 ROBOCALL',     cls:'badge-robocall'},
-  WANGIRI:      {label:'⚠️ WANGIRI',      cls:'badge-wangiri'},
-  FRAUDE:       {label:'💀 FRAUDE',       cls:'badge-fraude'},
-  SOSPECHOSO:   {label:'🟡 SOSPECHOSO',   cls:'badge-sospechoso'},
-  LEGITIMO:     {label:'✅ LEGÍTIMO',     cls:'badge-legitimo'},
-  DESCONOCIDO:  {label:'❓ DESCONOCIDO',  cls:'badge-desconocido'}
+  ROBOCALL:{label:'🤖 ROBOCALL',cls:'badge-robocall'},
+  WANGIRI:{label:'⚠️ WANGIRI',cls:'badge-wangiri'},
+  FRAUDE:{label:'💀 FRAUDE',cls:'badge-fraude'},
+  SOSPECHOSO:{label:'🟡 SOSPECHOSO',cls:'badge-sospechoso'},
+  LEGITIMO:{label:'✅ LEGÍTIMO',cls:'badge-legitimo'},
+  DESCONOCIDO:{label:'❓ DESCONOCIDO',cls:'badge-desconocido'}
 };
+
+const op   = n => OPERATORS[n.substring(0,3)] || (n.startsWith('60')?'Fijo Colombia':'Operador desconocido');
+const city = n => CITIES[n.substring(0,3)] || (n.startsWith('3')?'Nacional':'Colombia');
+const typ  = n => n.startsWith('60')?'Línea fija':n.startsWith('3')?'Móvil':'Desconocido';
 
 // ── STATE ─────────────────────────────────────────────────────────
-const S = {
-  history: [], reports: {}, selectedCat: null,
-  stats: { r:12847, n:4321, c:89 }
-};
+const S = { history:[], selectedCat:null, consultas:0 };
 
-// ── HELPERS ───────────────────────────────────────────────────────
-const op  = n => OPERATORS[n.substring(0,3)] || (n.startsWith('60') ? 'Fijo Colombia' : 'Operador desconocido');
-const city= n => CITIES[n.substring(0,3)] || (n.startsWith('3') ? 'Nacional' : 'Colombia');
-const typ = n => n.startsWith('60') ? 'Línea fija' : n.startsWith('3') ? 'Móvil' : 'Desconocido';
-
-function updateStats() {
-  document.getElementById('sR').textContent = S.stats.r.toLocaleString('es-CO');
-  document.getElementById('sN').textContent = S.stats.n.toLocaleString('es-CO');
-  document.getElementById('sC').textContent = S.stats.c.toLocaleString('es-CO');
-}
-
-// ── ANÁLISIS LOCAL ────────────────────────────────────────────────
-function analizar(num) {
-  const userReports = S.reports[num] || [];
+// ── ANALIZAR ──────────────────────────────────────────────────────
+function analizar(num, dbReports) {
   const prefix7 = num.substring(0,7);
-  const prefix3 = num.substring(0,3);
-
-  // Verificar base conocida
   if (KNOWN_SPAM[prefix7]) {
     const k = KNOWN_SPAM[prefix7];
-    return { ...k, reports: 120 + userReports.length, userReports };
+    return { ...k, reports: k.risk + dbReports.length };
   }
-
-  // Patrones internacionales (Wangiri)
-  if (num.startsWith('00') || num.startsWith('+') && !num.startsWith('+57')) {
-    return { verdict:'WANGIRI', risk:92, reports:34 + userReports.length, userReports,
-      analysis:'Número internacional sospechoso. El fraude Wangiri consiste en llamar y colgar para que devuelvas la llamada a líneas de tarificación premium con costo altísimo.',
-      tip:'NUNCA devuelvas llamadas de números internacionales desconocidos. Bloquéalo inmediatamente.' };
+  if (num.startsWith('00')) return {
+    verdict:'WANGIRI', risk:92, reports:dbReports.length,
+    analysis:'Número internacional sospechoso. El fraude Wangiri consiste en llamar y colgar para que devuelvas la llamada a líneas de tarificación premium.',
+    tip:'NUNCA devuelvas llamadas de números internacionales desconocidos.'
+  };
+  if (['018000','01800','018'].some(p=>num.startsWith(p))) return {
+    verdict:'TELEMARKETING', risk:70, reports:dbReports.length,
+    analysis:'Número de línea gratuita 018000. Usado por empresas para campañas de telemarketing masivo.',
+    tip:'Puedes solicitar ser excluido de sus listas comerciales.'
+  };
+  if (dbReports.length > 0) {
+    const cats = dbReports.map(r=>r.categoria);
+    const top = cats.sort((a,b)=>cats.filter(c=>c===b).length-cats.filter(c=>c===a).length)[0];
+    const vm = {spam:'SPAM',telemarketing:'TELEMARKETING',banco:'TELEMARKETING',robocall:'ROBOCALL',llama_cuelga:'ROBOCALL',wangiri:'WANGIRI',fraude:'FRAUDE',legitimo:'LEGITIMO'};
+    const v = vm[top]||'SOSPECHOSO';
+    const rm = {SPAM:88,TELEMARKETING:72,ROBOCALL:80,WANGIRI:95,FRAUDE:97,SOSPECHOSO:55,LEGITIMO:5};
+    return { verdict:v, risk:rm[v]||55, reports:dbReports.length,
+      analysis:`Este número ha sido reportado ${dbReports.length} vez(ces) por usuarios de QuienLlama como "${top}".`,
+      tip:'Si recibes esta llamada, no compartas datos personales.' };
   }
-
-  // 018000 gratuitos
-  if (SPAM_PREFIXES.some(p => num.startsWith(p))) {
-    return { verdict:'TELEMARKETING', risk:70, reports:45 + userReports.length, userReports,
-      analysis:'Número de línea gratuita 018000. Generalmente usado por empresas para campañas de telemarketing masivo. Suelen usar sistemas de marcación automática.',
-      tip:'Puedes solicitar ser excluido de sus listas comerciales respondiendo "No gracias".' };
-  }
-
-  // Reportes de usuarios
-  if (userReports.length > 0) {
-    const cats = userReports.map(r => r.cat);
-    const topCat = cats.sort((a,b) => cats.filter(c=>c===b).length - cats.filter(c=>c===a).length)[0];
-    const verdictMap = {
-      spam:'SPAM', telemarketing:'TELEMARKETING', banco:'TELEMARKETING',
-      robocall:'ROBOCALL', llama_cuelga:'ROBOCALL', wangiri:'WANGIRI',
-      fraude:'FRAUDE', legitimo:'LEGITIMO'
-    };
-    const v = verdictMap[topCat] || 'SOSPECHOSO';
-    const riskMap = {SPAM:88,TELEMARKETING:72,ROBOCALL:80,WANGIRI:95,FRAUDE:97,SOSPECHOSO:55,LEGITIMO:5};
-    return { verdict:v, risk:riskMap[v]||55, reports:userReports.length, userReports,
-      analysis:`Este número ha sido reportado ${userReports.length} vez(ces) por usuarios de QuienLlama como "${topCat}". La comunidad lo clasifica como sospechoso.`,
-      tip:'Confía en los reportes de la comunidad. Si lo recibes, no compartas datos personales.' };
-  }
-
-  // Patrones por prefijo
-  const spamPrefixes3 = ['604','605','601','600'];
-  if (spamPrefixes3.includes(prefix3)) {
-    const rand = parseInt(num.slice(-3)) % 3;
-    if (rand === 0) return { verdict:'TELEMARKETING', risk:65, reports:12+userReports.length, userReports,
-      analysis:`Número fijo de ${city(num)}. Los números fijos de esta área son frecuentemente usados por call centers y empresas de telemarketing.`,
-      tip:'Si no reconoces la empresa, no confirmes datos personales por teléfono.' };
-  }
-
-  // Sin reportes = desconocido, no sospechoso
-  return { verdict:'DESCONOCIDO', risk:0, reports:0, userReports,
-    analysis:'Este número no tiene reportes en nuestra base de datos. No podemos confirmar si es spam o legítimo. Si recibes una llamada extraña de este número, repórtalo para alertar a otros usuarios.',
+  return { verdict:'DESCONOCIDO', risk:0, reports:0,
+    analysis:'Este número no tiene reportes en nuestra base de datos. No podemos confirmar si es spam o legítimo.',
     tip:'Sé el primero en reportar este número y ayuda a la comunidad colombiana 🇨🇴' };
 }
 
 // ── BUSCAR ────────────────────────────────────────────────────────
-function buscar() {
+async function buscar() {
   const num = document.getElementById('phoneInput').value.trim();
-  if (!num || num.length < 7) { showToast('⚠️ Ingresa un número válido (mínimo 7 dígitos)', '#ff9800'); return; }
-
+  if (!num || num.length < 7) { showToast('⚠️ Ingresa un número válido','#ff9800'); return; }
   document.getElementById('btnSearch').disabled = true;
-  document.getElementById('resultArea').innerHTML = `<div class="loading"><div class="spinner"></div><p>Analizando número...</p></div>`;
+  document.getElementById('resultArea').innerHTML = `<div class="loading"><div class="spinner"></div><p>Consultando base de datos...</p></div>`;
   document.getElementById('divider').style.display = 'none';
-  S.stats.c++;
-
-  setTimeout(() => {
-    const result = analizar(num);
-    renderResult(num, result);
-    document.getElementById('btnSearch').disabled = false;
-  }, 900);
+  S.consultas++;
+  document.getElementById('sC').textContent = S.consultas;
+  const dbReports = await getReportes(num);
+  const result = analizar(num, dbReports);
+  renderResult(num, result, dbReports);
+  document.getElementById('btnSearch').disabled = false;
 }
 
 // ── RENDER RESULT ─────────────────────────────────────────────────
-function renderResult(num, r) {
-  const v = VERDICTS[r.verdict] || VERDICTS.DESCONOCIDO;
-  const riskCls = r.risk >= 70 ? 'risk-high' : r.risk >= 40 ? 'risk-mid' : 'risk-low';
-
-  if (!S.history.find(h => h.num === num)) {
-    S.history.unshift({ num, vLabel:v.label, vcls:v.cls });
-    if (S.history.length > 8) S.history.pop();
-    S.stats.n++; updateStats();
+function renderResult(num, r, dbReports) {
+  const v = VERDICTS[r.verdict]||VERDICTS.DESCONOCIDO;
+  const riskCls = r.risk>=70?'risk-high':r.risk>=40?'risk-mid':r.risk>0?'risk-low':'risk-zero';
+  if (!S.history.find(h=>h.num===num)) {
+    S.history.unshift({num,vLabel:v.label,vcls:v.cls});
+    if(S.history.length>8) S.history.pop();
   }
-
-  // Resumen de reportes comunitarios
-  const cats = (r.userReports||[]).map(x => x.cat);
+  const cats = dbReports.map(x=>x.categoria);
   const catCount = {};
-  cats.forEach(c => catCount[c] = (catCount[c]||0)+1);
+  cats.forEach(c=>catCount[c]=(catCount[c]||0)+1);
   const topCats = Object.entries(catCount).sort((a,b)=>b[1]-a[1]).slice(0,3);
-  const communityHtml = topCats.length > 0 ? `
-    <div class="community-reports">
+  const communityHtml = topCats.length>0 ? `
+    <div style="margin:12px 0">
       <div class="cr-title">📊 Reportes de la comunidad</div>
-      ${topCats.map(([cat,cnt]) => `
+      ${topCats.map(([cat,cnt])=>`
         <div class="cr-bar-row">
           <div class="cr-label">${CATS.find(c=>c.id===cat)?.label||cat}</div>
           <div class="cr-bar"><div class="cr-fill" style="width:${Math.min(100,cnt*20)}%"></div></div>
           <div class="cr-count">${cnt}</div>
         </div>`).join('')}
     </div>` : '';
-
-  const catBtns = CATS.map(c =>
-    `<button class="cat-btn" id="cat_${c.id}" onclick="selCat('${c.id}')">${c.label}</button>`).join('');
-
+  const catBtns = CATS.map(c=>`<button class="cat-btn" id="cat_${c.id}" onclick="selCat('${c.id}')">${c.label}</button>`).join('');
   document.getElementById('resultArea').innerHTML = `
     <div class="result-card">
       <div class="result-header">
@@ -313,13 +298,13 @@ function renderResult(num, r) {
       ${communityHtml}
       <div class="ai-analysis">
         <div class="ai-label">🔍 ANÁLISIS</div>
-        ${r.analysis}
-        <br><br><strong style="color:#ffd700">💡 ${r.tip}</strong>
+        ${r.analysis}<br><br>
+        <strong style="color:#ffd700">💡 ${r.tip}</strong>
       </div>
       <div class="info-grid">
         <div class="info-item"><div class="info-item-label">Operadora</div><div class="info-item-value">${op(num)}</div></div>
-        <div class="info-item"><div class="info-item-label">Tipo de línea</div><div class="info-item-value">${typ(num)}</div></div>
-        <div class="info-item"><div class="info-item-label">Ciudad / Región</div><div class="info-item-value">📍 ${city(num)}</div></div>
+        <div class="info-item"><div class="info-item-label">Tipo</div><div class="info-item-value">${typ(num)}</div></div>
+        <div class="info-item"><div class="info-item-label">Ciudad</div><div class="info-item-value">📍 ${city(num)}</div></div>
         <div class="info-item"><div class="info-item-label">País</div><div class="info-item-value">🇨🇴 Colombia</div></div>
       </div>
       <div class="report-section">
@@ -330,38 +315,40 @@ function renderResult(num, r) {
         <button class="btn-report" onclick="enviarReporte('${num}')">Enviar reporte 🚨</button>
       </div>
     </div>`;
-
-  setTimeout(() => { const f=document.getElementById('riskFill'); if(f) f.style.width=r.risk+'%'; }, 100);
-  document.getElementById('divider').style.display = 'block';
+  setTimeout(()=>{ const f=document.getElementById('riskFill'); if(f) f.style.width=r.risk+'%'; },100);
+  document.getElementById('divider').style.display='block';
   renderHistory();
 }
 
-// ── SELECCIONAR CATEGORÍA ─────────────────────────────────────────
+// ── SELECCIONAR CAT ───────────────────────────────────────────────
 function selCat(id) {
-  S.selectedCat = id;
-  CATS.forEach(c => { const b=document.getElementById('cat_'+c.id); if(b) b.classList.toggle('selected', c.id===id); });
+  S.selectedCat=id;
+  CATS.forEach(c=>{ const b=document.getElementById('cat_'+c.id); if(b) b.classList.toggle('selected',c.id===id); });
 }
 
 // ── REPORTAR ──────────────────────────────────────────────────────
-function enviarReporte(num) {
-  if (!S.selectedCat) { showToast('⚠️ Selecciona una categoría primero', '#ff9800'); return; }
+async function enviarReporte(num) {
+  if (!S.selectedCat) { showToast('⚠️ Selecciona una categoría primero','#ff9800'); return; }
   const comment = document.getElementById('repComment').value.trim();
-  if (!S.reports[num]) S.reports[num] = [];
-  S.reports[num].push({ cat:S.selectedCat, comment, ts:Date.now() });
-  S.stats.r++; updateStats();
-  showToast('✅ ¡Reporte enviado! Gracias por ayudar a la comunidad 🇨🇴');
-  document.getElementById('repComment').value = '';
-  S.selectedCat = null;
-  CATS.forEach(c => { const b=document.getElementById('cat_'+c.id); if(b) b.classList.remove('selected'); });
-  // Re-analizar con nuevo reporte
-  setTimeout(() => { renderResult(num, analizar(num)); }, 500);
+  const ok = await insertReporte(num, S.selectedCat, comment);
+  if (ok) {
+    showToast('✅ ¡Reporte enviado! Gracias por ayudar a la comunidad 🇨🇴');
+    document.getElementById('repComment').value='';
+    S.selectedCat=null;
+    CATS.forEach(c=>{ const b=document.getElementById('cat_'+c.id); if(b) b.classList.remove('selected'); });
+    await getTotales();
+    const dbReports = await getReportes(num);
+    renderResult(num, analizar(num, dbReports), dbReports);
+  } else {
+    showToast('⚠️ Error al enviar reporte, intenta de nuevo','#ff9800');
+  }
 }
 
 // ── HISTORIAL ─────────────────────────────────────────────────────
 function renderHistory() {
   const area = document.getElementById('historyArea');
   if (!S.history.length) { area.innerHTML=''; return; }
-  area.innerHTML = `<div class="history-section">
+  area.innerHTML=`<div class="history-section">
     <div class="history-title">🕐 Consultas recientes</div>
     ${S.history.map(h=>`
       <div class="history-item" onclick="document.getElementById('phoneInput').value='${h.num}';buscar()">
@@ -372,14 +359,15 @@ function renderHistory() {
 }
 
 // ── TOAST ─────────────────────────────────────────────────────────
-function showToast(msg, color='#4caf50') {
-  const t = document.createElement('div');
+function showToast(msg,color='#4caf50') {
+  const t=document.createElement('div');
   t.className='toast'; t.style.background=color; t.textContent=msg;
   document.body.appendChild(t);
-  setTimeout(()=>t.remove(), 3000);
+  setTimeout(()=>t.remove(),3000);
 }
 
-updateStats();
+// ── INIT ──────────────────────────────────────────────────────────
+getTotales();
 </script>
 </body>
 </html>
